@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Né Chiêu</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #282c34;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        canvas {
+            border: 2px solid #fff;
+        }
+        #timer, #highscore, #startButton, #resetButton {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 24px;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        #highscore {
+            top: 50px;
+        }
+        #startButton, #resetButton {
+            top: 100px;
+            padding: 10px 20px;
+            background-color: #ff5733;
+            border: none;
+            cursor: pointer;
+        }
+        #startButton:hover, #resetButton:hover {
+            background-color: #ff2a00;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="timer">Time: 0</div>
+    <div id="highscore">Highscore: 0</div>
+    <button id="startButton">Start Game</button>
+    <button id="resetButton" style="display: none;">Play Again</button>
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        canvas.width = 800;
+        canvas.height = 600;
+
+        // Nhân vật người chơi
+        const player = {
+            x: canvas.width / 2 - 25,
+            y: canvas.height / 2 - 25,
+            width: 50,
+            height: 50,
+            color: "blue",
+            dx: 0,
+            dy: 0,
+            speed: 5
+        };
+
+        // Tấn công
+        let attacks = [];
+        let attackSpeed = 5; // Tốc độ ban đầu của đòn tấn công
+        let attackInterval = 1000; // Thời gian giữa các đòn tấn công (ms)
+        let lastAttackTime = 0; // Thời gian tạo đòn tấn công cuối cùng
+
+        // Thời gian sống sót
+        let survivalTime = 0;
+        let lastTime = Date.now();
+
+        // Lưu điểm
+        let highscore = localStorage.getItem("highscore") || 0;
+        document.getElementById('highscore').textContent = `Highscore: ${highscore}`;
+
+        // Biến trạng thái game
+        let gameStarted = false;
+
+        // Điều khiển người chơi
+        window.addEventListener("keydown", (e) => {
+            if (e.key === "ArrowUp") player.dy = -player.speed;
+            if (e.key === "ArrowDown") player.dy = player.speed;
+            if (e.key === "ArrowLeft") player.dx = -player.speed;
+            if (e.key === "ArrowRight") player.dx = player.speed;
+        });
+
+        window.addEventListener("keyup", (e) => {
+            if (e.key === "ArrowUp" || e.key === "ArrowDown") player.dy = 0;
+            if (e.key === "ArrowLeft" || e.key === "ArrowRight") player.dx = 0;
+        });
+
+        // Tạo đòn tấn công từ nhiều hướng
+        function createAttack() {
+            const direction = Math.floor(Math.random() * 4); // 4 hướng
+            const attack = {
+                x: direction === 0 ? 0 : direction === 1 ? canvas.width : Math.random() * canvas.width,
+                y: direction === 0 ? Math.random() * canvas.height : direction === 1 ? Math.random() * canvas.height : direction === 2 ? 0 : canvas.height,
+                width: 10,
+                height: 20,
+                color: "yellow",
+                direction: direction,
+                speed: attackSpeed
+            };
+            attacks.push(attack);
+        }
+
+        // Di chuyển các đòn tấn công
+        function moveAttacks() {
+            for (let i = 0; i < attacks.length; i++) {
+                const attack = attacks[i];
+                if (attack.direction === 0) attack.x += attack.speed; // Từ trái sang phải
+                if (attack.direction === 1) attack.x -= attack.speed; // Từ phải sang trái
+                if (attack.direction === 2) attack.y += attack.speed; // Từ trên xuống dưới
+                if (attack.direction === 3) attack.y -= attack.speed; // Từ dưới lên trên
+
+                // Nếu đòn tấn công ra ngoài màn hình thì xóa
+                if (attack.x < 0 || attack.x > canvas.width || attack.y < 0 || attack.y > canvas.height) {
+                    attacks.splice(i, 1);
+                    i--;
+                }
+            }
+        }
+
+        // Kiểm tra va chạm
+        function checkCollision() {
+            for (let attack of attacks) {
+                if (
+                    player.x <= attack.x + attack.width &&
+                    player.x + player.width >= attack.x &&
+                    player.y <= attack.y + attack.height &&
+                    player.y + player.height >= attack.y
+                ) {
+                    updateHighscore(); // Cập nhật điểm cao khi game kết thúc
+                    resetGame(); // Reset game khi bị đánh
+                    break;
+                }
+            }
+        }
+
+        // Cập nhật điểm cao
+        function updateHighscore() {
+            if (survivalTime > highscore) {
+                highscore = survivalTime;
+                localStorage.setItem("highscore", highscore); // Lưu điểm cao vào localStorage
+                document.getElementById('highscore').textContent = `Highscore: ${highscore}`;
+            }
+        }
+
+        // Reset game
+        function resetGame() {
+            player.x = canvas.width / 2 - 25;
+            player.y = canvas.height / 2 - 25;
+            attacks = [];
+            survivalTime = 0; // Reset thời gian
+            gameStarted = false;
+            document.getElementById('startButton').style.display = "block";
+            document.getElementById('resetButton').style.display = "none";
+            document.getElementById('timer').textContent = `Time: 0`;
+        }
+
+        // Cập nhật thời gian sống sót
+        function updateTime() {
+            const now = Date.now();
+            if (now - lastTime >= 1000) { // Cập nhật mỗi giây
+                survivalTime++;
+                document.getElementById('timer').textContent = `Time: ${survivalTime}s`;
+                lastTime = now;
+
+                // Tăng độ khó mỗi 2 giây
+                if (survivalTime % 2 === 0) {
+                    attackSpeed += 0.2; // Tăng tốc độ tấn công
+                    attackInterval *= 0.5; // Giảm thời gian giữa các đòn tấn công
+                }
+            }
+        }
+
+        // Bắt đầu trò chơi
+        document.getElementById('startButton').addEventListener('click', () => {
+            gameStarted = true;
+            document.getElementById('startButton').style.display = "none";
+            document.getElementById('resetButton').style.display = "block";
+            draw();
+        });
+
+        // Chơi lại
+        document.getElementById('resetButton').addEventListener('click', () => {
+            resetGame();
+            document.getElementById('startButton').style.display = "block";
+            document.getElementById('resetButton').style.display = "none";
+        });
+
+        // Vẽ game
+        function draw() {
+            if (!gameStarted) return; // Nếu game chưa bắt đầu thì không vẽ
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Vẽ người chơi
+            ctx.fillStyle = player.color;
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // Vẽ đòn tấn công
+            for (let attack of attacks) {
+                ctx.fillStyle = attack.color;
+                ctx.fillRect(attack.x, attack.y, attack.width, attack.height);
+            }
+
+            // Di chuyển người chơi và kiểm tra va chạm
+            player.x += player.dx;
+            player.y += player.dy;
+            moveAttacks();
+            checkCollision();
+
+            // Tạo đòn tấn công ngẫu nhiên
+            if (Date.now() - lastAttackTime > attackInterval) {
+                createAttack();
+                lastAttackTime = Date.now();
+            }
+
+            // Cập nhật thời gian sống sót
+            updateTime();
+
+            // Yêu cầu vẽ lại trong vòng lặp game
+            requestAnimationFrame(draw);
+        }
+    </script>
+</body>
+</html>
